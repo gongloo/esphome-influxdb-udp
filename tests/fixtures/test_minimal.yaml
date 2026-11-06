@@ -1,0 +1,30 @@
+esphome:
+  name: test-influxdb-minimal
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+wifi:
+  ssid: "TestSSID"
+  password: "TestPassword"
+
+external_components:
+  - source:
+      type: local
+      path: ../../components
+    components: [influxdb_udp]
+
+sensor:
+  - platform: uptime
+    id: sys_uptime
+    update_interval: 15s
+
+influxdb_udp:
+  host: "192.168.1.50"
+  measurements:
+    - measurement: system
+      fields:
+        uptime: sys_uptime
+

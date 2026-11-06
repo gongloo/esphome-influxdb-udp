@@ -1,0 +1,137 @@
+esphome:
+  name: test-influxdb-full
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+wifi:
+  ssid: "TestSSID"
+  password: "TestPassword"
+
+external_components:
+  - source:
+      type: local
+      path: ../../components
+    components: [influxdb_udp]
+
+sensor:
+  - platform: uptime
+    id: sys_uptime
+    update_interval: 15s
+  - platform: template
+    id: batt_voltage
+    accuracy_decimals: 2
+    update_interval: 5s
+    lambda: |-
+      return 13.85f;
+  - platform: template
+    id: status_bitmask
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: |-
+      return 5.0f;
+
+binary_sensor:
+  - platform: template
+    id: is_charging
+    lambda: |-
+      return true;
+
+switch:
+  - platform: template
+    id: relay_1
+    optimistic: true
+    turn_on_action:
+      - influxdb_udp.publish: relay_states
+    turn_off_action:
+      - influxdb_udp.publish: relay_states
+
+text_sensor:
+  - platform: template
+    id: charge_mode
+    update_interval: 5s
+    lambda: |-
+      return std::string("Bulk");
+
+number:
+  - platform: template
+    id: target_soc
+    optimistic: true
+    min_value: 0
+    max_value: 100
+    step: 1
+
+select:
+  - platform: template
+    id: operating_profile
+    optimistic: true
+    options:
+      - "Eco"
+      - "Performance"
+
+influxdb_udp:
+  host: "192.168.1.50"
+  port: 8089
+  max_packet_size: 1472
+  host_entity:
+    name: "InfluxDB Host"
+  port_entity:
+    name: "InfluxDB Port"
+  tags:
+    host: test-influxdb-full
+  measurements:
+    - measurement: system
+      fields:
+        uptime:
+          sensor: sys_uptime
+          type: uint
+        free_heap:
+          type: uint
+          lambda: |-
+            return esp_get_free_heap_size();
+
+    - measurement: power_system
+      id: batch_power
+      skip_if_nan: false
+      tags:
+        bank: primary
+        mode:
+          text_sensor: charge_mode
+          ignore_values: ["Unavailable", "Unknown"]
+      fields:
+        voltage: batt_voltage
+        voltage_precise:
+          sensor: batt_voltage
+          decimals: 3
+        charging: is_charging
+        target_soc:
+          number: target_soc
+          type: int
+        profile:
+          select: operating_profile
+        flag_bit0:
+          sensor: status_bitmask
+          bit: 0
+        flag_bit2:
+          sensor: status_bitmask
+          bit: 2
+        computed_watts: !lambda |-
+          return id(batt_voltage).state * 10.0f;
+
+    - id: relay_states
+      measurement: relay
+      update_interval: 5s
+      points:
+        - tags:
+            relay: relay_1
+          state: relay_1
+
+  points:
+    - measurement: cell_voltage
+      tags:
+        bms_id: 0
+        cell: 1
+      voltage: batt_voltage
+

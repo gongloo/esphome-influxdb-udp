@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  cpp-unit-tests:
+    name: C++ Unit Tests (ASAN/UBSAN)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install doctest
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doctest-dev
+
+      - name: Compile and run C++ tests
+        run: make -C tests/cpp run
+
+  python-tests:
+    name: Python Schema & Codegen Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: tests/requirements.txt
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tests/requirements.txt
+
+      - name: Run Python tests
+        run: pytest tests/python -v
+
+  esphome-build:
+    name: ESPHome Build (${{ matrix.fixture }}, ${{ matrix.version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version: [latest, beta, dev]
+        fixture: [test_minimal.yaml, test_full.yaml]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Test Firmware with Official ESPHome Action
+        uses: esphome/build-action@v6
+        with:
+          yaml-file: tests/fixtures/${{ matrix.fixture }}
+          version: ${{ matrix.version }}
+
