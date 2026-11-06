@@ -3,6 +3,7 @@
 #include "esphome/core/automation.h"
 #include "esphome/core/component.h"
 #include "esphome/core/defines.h"
+#include "esphome/core/entity_base.h"
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 #include "esphome/core/preferences.h"
@@ -76,8 +77,26 @@ class InfluxDBUDP : public Component {
   InfluxDBUDP() : packet_buf_(this->inline_buf_, DEFAULT_MAX_PACKET_SIZE, &InfluxDBUDP::flush_trampoline_, this) {}
 
   void setup() override;
+  void loop() override;
   void dump_config() override;
   float get_setup_priority() const override { return setup_priority::AFTER_WIFI; }
+
+  /// Configure publish_all mode: automatically stream telemetry from all non-internal entities.
+  void set_publish_all(bool publish_all) { this->publish_all_ = publish_all; }
+  void set_publish_all_include_internal(bool val) { this->publish_all_include_internal_ = val; }
+  void set_publish_all_send_timeout(uint32_t ms) { this->send_timeout_ms_ = ms; }
+  void set_publish_all_tags(const std::string &tags) { this->publish_all_tags_ = tags; }
+  void set_publish_all_include_sensors(bool val) { this->publish_all_include_sensors_ = val; }
+  void set_publish_all_include_binary_sensors(bool val) { this->publish_all_include_binary_sensors_ = val; }
+  void set_publish_all_include_text_sensors(bool val) { this->publish_all_include_text_sensors_ = val; }
+  void set_publish_all_include_switches(bool val) { this->publish_all_include_switches_ = val; }
+  void set_publish_all_include_numbers(bool val) { this->publish_all_include_numbers_ = val; }
+  void set_publish_all_include_selects(bool val) { this->publish_all_include_selects_ = val; }
+  void add_publish_all_exclude(EntityBase *entity) {
+    if (entity != nullptr) {
+      this->publish_all_excludes_.push_back(entity);
+    }
+  }
 
   /// Configure destination host/IP address at boot or dynamically at runtime (no reboot required).
   void set_host(const std::string &host);
@@ -471,6 +490,23 @@ class InfluxDBUDP : public Component {
   }
 
   void update_sockaddr_();
+  void setup_publish_all_();
+  bool is_publish_all_excluded_(EntityBase *obj) const;
+  void schedule_publish_all_flush_();
+
+  bool publish_all_{false};
+  bool publish_all_include_internal_{false};
+  bool publish_all_include_sensors_{true};
+  bool publish_all_include_binary_sensors_{true};
+  bool publish_all_include_text_sensors_{true};
+  bool publish_all_include_switches_{false};
+  bool publish_all_include_numbers_{false};
+  bool publish_all_include_selects_{false};
+  uint32_t send_timeout_ms_{100};
+  uint32_t last_buffered_time_{0};
+  bool has_pending_flush_{false};
+  std::string publish_all_tags_{};
+  std::vector<EntityBase *> publish_all_excludes_{};
 
   struct PeriodicBatchEntry {
     uint32_t interval_ms;

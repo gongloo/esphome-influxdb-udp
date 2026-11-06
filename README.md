@@ -20,6 +20,7 @@ Designed for resource-constrained ESP32/ESP8266 nodes with dozens or hundreds of
 - **Bitmask Flag Extraction (`bit: 0..31`):** Extract individual boolean flags (`T`/`F`) directly from numeric bitmask sensors or lambdas without creating intermediate template binary sensors—automatically skipping the flag if the bitmask sensor itself is `NaN`/offline.
 - **Live Runtime Host & Port Configuration (No Reboot Required):** Built directly on `esphome::socket`, allowing the destination IP address and UDP port to be changed **live at runtime** via auto-created NVS-backed `host_entity:` (`text`) and `port_entity:` (`number`) configuration entities (or linked `host_text_id:` / `port_number_id:` entities) without restarting the ESP node.
 - **Event-Driven Publishing (`influxdb_udp.publish`):** Trigger any measurement or grouped point batch immediately from any ESPHome automation (`on_turn_on`, `on_value`, `on_boot`, etc.) in addition to—or instead of (`update_interval: never`)—periodic polling.
+- **Automatic "Publish All" Mode (`publish_all: true`):** Automatically registers state change callbacks for all non-internal entities in the node (`sensor`, `binary_sensor`, `text_sensor`, and optionally `switch`, `number`, `select`), buffering state updates into UDP packets with configurable batch timeout flushing—providing a zero-boilerplate drop-in replacement for the legacy `publish_all` pattern.
 
 ---
 
@@ -312,6 +313,47 @@ bms_cell_voltage,host=relay-node,bms_id=0,cell=1 voltage=3.342
 bms_cell_voltage,host=relay-node,bms_id=0,cell=2 voltage=3.345
 ```
 
+### 8. Auto-Publishing All Entities (`publish_all`)
+
+If you want all entities on your device to stream their states to InfluxDB without declaring each one manually in `measurements:` or `points:`, enable `publish_all: true`:
+
+```yaml
+influxdb_udp:
+  host: "192.168.1.50"
+  tags:
+    host: my-esp32-node
+  publish_all: true
+```
+
+#### What `publish_all` Does
+- Automatically loops over all registered `sensor`, `binary_sensor`, and `text_sensor` entities registered on the node (`App.get_sensors()`, etc.).
+- Internal entities (`internal: true`) are skipped by default.
+- Any entity explicitly referenced in custom `measurements:` or `points:` is automatically excluded from `publish_all` to prevent double-publishing.
+- Whenever an entity state updates, it writes a Line Protocol entry formatted as:
+  `<object_id><global_static_tags> value=<state>`
+- Writes are buffered into the shared MTU packet buffer and transmitted after a configurable timeout (default `100ms`) or when the MTU buffer fills up.
+
+#### Customizing `publish_all`
+You can provide an options dictionary to fine-tune `publish_all`:
+
+```yaml
+influxdb_udp:
+  host: "192.168.1.50"
+  tags:
+    host: my-esp32-node
+  publish_all:
+    include_internal: false         # Default: false
+    include_sensors: true          # Default: true
+    include_binary_sensors: true   # Default: true
+    include_text_sensors: true     # Default: true
+    include_switches: false        # Default: false
+    include_numbers: false         # Default: false
+    include_selects: false         # Default: false
+    send_timeout: 100ms            # Buffer flush timeout after last update
+    ignore_entities:               # Entities to explicitly exclude
+      - internal_diagnostic_sensor
+```
+
 ---
 
 ## Configuration Reference
@@ -325,12 +367,29 @@ bms_cell_voltage,host=relay-node,bms_id=0,cell=2 voltage=3.345
 | `port` | `port` (`1..65535`) | `8089` | Default destination UDP port. |
 | `max_packet_size` | `int` (`64..65507`) | `1472` | Maximum UDP payload size in bytes before auto-flushing on a `\n` line boundary. |
 | `tags` | `map` | `{}` | Global tags applied to every measurement and point in this instance. Keys are tag names; values can be static literals (`string`, `int`, `float`, `bool`), `!lambda`, or dynamic entity dicts. |
+| `publish_all` | `boolean` or `map` | `false` | When enabled, automatically registers state callbacks for all entities on the node and flushes updates over UDP. |
+| `send_timeout` | `time` | `100ms` | Time to wait after buffering an update before flushing the UDP packet (when `publish_all` is enabled). |
 | `host_entity` | `text` schema | *(Optional)* | Auto-creates a Home Assistant `text` config entity (`ENTITY_CATEGORY_CONFIG`) to view and change the destination IP at runtime. Accepts all standard ESPHome `text` options plus `initial_value` and `restore_value` (default `true`). |
 | `port_entity` | `number` schema | *(Optional)* | Auto-creates a Home Assistant `number` config entity (`ENTITY_CATEGORY_CONFIG`) to view and change the destination UDP port at runtime. Accepts all standard ESPHome `number` options plus `initial_value`, `min_value` (`1`), `max_value` (`65535`), `step` (`1`), `mode` (`BOX`), and `restore_value` (default `true`). |
 | `host_text_id` | `ID<text::Text>` | *(Optional)* | Links an existing ESPHome `text` entity to update the destination host on state change. Mutually exclusive with `host_entity`. |
 | `port_number_id` | `ID<number::Number>` | *(Optional)* | Links an existing ESPHome `number` entity to update the destination port on state change. Mutually exclusive with `port_entity`. |
 | `measurements` | `list` | `[]` | List of measurement or point-group definitions. |
 | `points` | `list` | `[]` | List of top-level point definitions. |
+
+### `publish_all:` Options
+
+| Key | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `include_internal` | `boolean` | `false` | Whether to include entities with `internal: true`. |
+| `include_sensors` | `boolean` | `true` | Stream all numeric `sensor` updates. |
+| `include_binary_sensors` | `boolean` | `true` | Stream all `binary_sensor` updates. |
+| `include_text_sensors` | `boolean` | `true` | Stream all `text_sensor` updates. |
+| `include_switches` | `boolean` | `false` | Stream all `switch` updates. |
+| `include_numbers` | `boolean` | `false` | Stream all `number` updates. |
+| `include_selects` | `boolean` | `false` | Stream all `select` updates. |
+| `send_timeout` | `time` | `100ms` | Milliseconds to wait after an update before sending buffered packet. |
+| `ignore_entities` | `list of IDs` | `[]` | Specific entity IDs to exclude from auto-publishing. |
+
 
 ### `measurements:` Item Options
 

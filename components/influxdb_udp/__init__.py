@@ -63,6 +63,16 @@ CONF_POINTS = "points"
 CONF_MEASUREMENT = "measurement"
 CONF_FIELDS = "fields"
 CONF_SKIP_IF_NAN = "skip_if_nan"
+CONF_PUBLISH_ALL = "publish_all"
+CONF_INCLUDE_INTERNAL = "include_internal"
+CONF_INCLUDE_SENSORS = "include_sensors"
+CONF_INCLUDE_BINARY_SENSORS = "include_binary_sensors"
+CONF_INCLUDE_TEXT_SENSORS = "include_text_sensors"
+CONF_INCLUDE_SWITCHES = "include_switches"
+CONF_INCLUDE_NUMBERS = "include_numbers"
+CONF_INCLUDE_SELECTS = "include_selects"
+CONF_SEND_TIMEOUT = "send_timeout"
+CONF_IGNORE_ENTITIES = "ignore_entities"
 
 CONF_ENTITY = "entity"
 CONF_BINARY_SENSOR = "binary_sensor"
@@ -347,6 +357,31 @@ PORT_ENTITY_SCHEMA = number.number_schema(
 )
 
 
+PUBLISH_ALL_SCHEMA = cv.Schema(
+    {
+        cv.Optional(CONF_INCLUDE_INTERNAL, default=False): cv.boolean,
+        cv.Optional(CONF_INCLUDE_SENSORS, default=True): cv.boolean,
+        cv.Optional(CONF_INCLUDE_BINARY_SENSORS, default=True): cv.boolean,
+        cv.Optional(CONF_INCLUDE_TEXT_SENSORS, default=True): cv.boolean,
+        cv.Optional(CONF_INCLUDE_SWITCHES, default=False): cv.boolean,
+        cv.Optional(CONF_INCLUDE_NUMBERS, default=False): cv.boolean,
+        cv.Optional(CONF_INCLUDE_SELECTS, default=False): cv.boolean,
+        cv.Optional(CONF_SEND_TIMEOUT, default="100ms"): cv.positive_time_period_milliseconds,
+        cv.Optional(CONF_IGNORE_ENTITIES, default=[]): cv.ensure_list(cv.use_id(None)),
+    }
+)
+
+
+def _validate_publish_all(value):
+    if isinstance(value, bool):
+        if not value:
+            return None
+        return PUBLISH_ALL_SCHEMA({})
+    if isinstance(value, dict):
+        return PUBLISH_ALL_SCHEMA(value)
+    raise cv.Invalid(f"Invalid publish_all configuration: expected boolean or dictionary, got {value!r}")
+
+
 def _validate_root_config(config):
     if (
         CONF_HOST not in config
@@ -360,8 +395,9 @@ def _validate_root_config(config):
         raise cv.Invalid("Cannot specify both 'host_entity:' and 'host_text_id:'")
     if CONF_PORT_ENTITY in config and CONF_PORT_NUMBER_ID in config:
         raise cv.Invalid("Cannot specify both 'port_entity:' and 'port_number_id:'")
-    if not config.get(CONF_MEASUREMENTS) and not config.get(CONF_POINTS):
-        raise cv.Invalid("Must specify at least one entry in 'measurements:' or 'points:'")
+    has_publish_all = bool(config.get(CONF_PUBLISH_ALL))
+    if not config.get(CONF_MEASUREMENTS) and not config.get(CONF_POINTS) and not has_publish_all:
+        raise cv.Invalid("Must specify 'publish_all:', or at least one entry in 'measurements:' or 'points:'")
     from esphome.components import socket
 
     if hasattr(socket, "consume_sockets") and hasattr(socket, "SocketType"):
@@ -381,6 +417,8 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_PORT_ENTITY): PORT_ENTITY_SCHEMA,
             cv.Optional(CONF_HOST_TEXT_ID): cv.use_id(text.Text),
             cv.Optional(CONF_PORT_NUMBER_ID): cv.use_id(number.Number),
+            cv.Optional(CONF_PUBLISH_ALL): _validate_publish_all,
+            cv.Optional(CONF_SEND_TIMEOUT): cv.positive_time_period_milliseconds,
             cv.Optional(CONF_MEASUREMENTS, default=[]): cv.ensure_list(MEASUREMENT_ENTRY_SCHEMA),
             cv.Optional(CONF_POINTS, default=[]): cv.ensure_list(TOP_LEVEL_POINT_SCHEMA),
         }
@@ -764,6 +802,44 @@ async def to_code(config):
         )
 
     global_tags = config.get(CONF_TAGS, {})
+
+    publish_all_conf = config.get(CONF_PUBLISH_ALL)
+    if publish_all_conf:
+        cg.add(var.set_publish_all(True))
+        cg.add(var.set_publish_all_include_internal(publish_all_conf[CONF_INCLUDE_INTERNAL]))
+        timeout_val = config.get(CONF_SEND_TIMEOUT, publish_all_conf[CONF_SEND_TIMEOUT])
+        cg.add(var.set_publish_all_send_timeout(timeout_val))
+        cg.add(var.set_publish_all_include_sensors(publish_all_conf[CONF_INCLUDE_SENSORS]))
+        cg.add(var.set_publish_all_include_binary_sensors(publish_all_conf[CONF_INCLUDE_BINARY_SENSORS]))
+        cg.add(var.set_publish_all_include_text_sensors(publish_all_conf[CONF_INCLUDE_TEXT_SENSORS]))
+        cg.add(var.set_publish_all_include_switches(publish_all_conf[CONF_INCLUDE_SWITCHES]))
+        cg.add(var.set_publish_all_include_numbers(publish_all_conf[CONF_INCLUDE_NUMBERS]))
+        cg.add(var.set_publish_all_include_selects(publish_all_conf[CONF_INCLUDE_SELECTS]))
+
+        static_tag_parts = []
+        for t_key, t_spec in global_tags.items():
+            if CONF_STATIC_VALUE in t_spec:
+                static_tag_parts.append(f",{escape_tag(t_key)}={escape_tag(t_spec[CONF_STATIC_VALUE])}")
+        if static_tag_parts:
+            cg.add(var.set_publish_all_tags("".join(static_tag_parts)))
+
+        for ignored_id in publish_all_conf.get(CONF_IGNORE_ENTITIES, []):
+            ignored_var = await cg.get_variable(ignored_id)
+            cg.add(var.add_publish_all_exclude(ignored_var))
+
+        handled_eids = set()
+        for entry in config.get(CONF_MEASUREMENTS, []):
+            if entry.get(CONF_FIELDS):
+                handled_eids.update(_collect_specs_entity_ids(entry.get(CONF_TAGS, {}), entry[CONF_FIELDS]))
+            for pt in entry.get(CONF_POINTS, []):
+                handled_eids.update(_collect_specs_entity_ids(pt.get(CONF_TAGS, {}), pt[CONF_FIELDS]))
+        for pt in config.get(CONF_POINTS, []):
+            handled_eids.update(_collect_specs_entity_ids(pt.get(CONF_TAGS, {}), pt[CONF_FIELDS]))
+
+        for eid in sorted(handled_eids):
+            evar = await cg.get_variable(eid)
+            cg.add(var.add_publish_all_exclude(evar))
+
     interval_groups = OrderedDict()
 
     def _add_to_interval_group(interval_ms, line_code):
