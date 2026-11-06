@@ -36,6 +36,11 @@
 #include "esphome/components/text/text.h"
 #endif
 
+#if __has_include("esphome/components/globals/globals_component.h")
+#include "esphome/components/globals/globals_component.h"
+#define INFLUXDB_UDP_HAS_GLOBALS 1
+#endif
+
 #include <initializer_list>
 #include <memory>
 #include <string>
@@ -321,6 +326,142 @@ class InfluxDBUDP : public Component {
       return;
     }
     this->packet_buf_.add_tag(key, sel->current_option(), ignore_values);
+  }
+#endif
+
+#ifdef INFLUXDB_UDP_HAS_GLOBALS
+  template<typename T>
+  void add_entity_field(const char *key, globals::GlobalsComponent<T> *g, int decimals = -1,
+                        std::initializer_list<const char *> ignore_values = {}) {
+    if (g == nullptr) {
+      this->packet_buf_.mark_field_unavailable();
+      return;
+    }
+    this->packet_buf_.add_field_auto(key, g->value(), decimals, ignore_values);
+  }
+
+  template<typename T>
+  void add_entity_field(const char *key, globals::RestoringGlobalsComponent<T> *g, int decimals = -1,
+                        std::initializer_list<const char *> ignore_values = {}) {
+    if (g == nullptr) {
+      this->packet_buf_.mark_field_unavailable();
+      return;
+    }
+    this->packet_buf_.add_field_auto(key, g->value(), decimals, ignore_values);
+  }
+
+  template<typename T, uint8_t SZ>
+  void add_entity_field(const char *key, globals::RestoringGlobalStringComponent<T, SZ> *g, int decimals = -1,
+                        std::initializer_list<const char *> ignore_values = {}) {
+    (void) decimals;
+    if (g == nullptr) {
+      this->packet_buf_.mark_field_unavailable();
+      return;
+    }
+    this->packet_buf_.add_field_str(key, g->value().c_str(), ignore_values);
+  }
+
+  template<typename T>
+  void add_entity_field_int(const char *key, globals::GlobalsComponent<T> *g) {
+    if (g == nullptr) {
+      this->packet_buf_.mark_field_unavailable();
+      return;
+    }
+    this->packet_buf_.add_field_int(key, static_cast<int64_t>(g->value()));
+  }
+
+  template<typename T>
+  void add_entity_field_int(const char *key, globals::RestoringGlobalsComponent<T> *g) {
+    if (g == nullptr) {
+      this->packet_buf_.mark_field_unavailable();
+      return;
+    }
+    this->packet_buf_.add_field_int(key, static_cast<int64_t>(g->value()));
+  }
+
+  template<typename T>
+  void add_entity_field_uint(const char *key, globals::GlobalsComponent<T> *g, bool int_suffix = true) {
+    if (g == nullptr) {
+      this->packet_buf_.mark_field_unavailable();
+      return;
+    }
+    this->packet_buf_.add_field_uint(key, static_cast<uint64_t>(g->value()), int_suffix);
+  }
+
+  template<typename T>
+  void add_entity_field_uint(const char *key, globals::RestoringGlobalsComponent<T> *g, bool int_suffix = true) {
+    if (g == nullptr) {
+      this->packet_buf_.mark_field_unavailable();
+      return;
+    }
+    this->packet_buf_.add_field_uint(key, static_cast<uint64_t>(g->value()), int_suffix);
+  }
+
+  template<typename T>
+  void add_entity_field_bool(const char *key, globals::GlobalsComponent<T> *g) {
+    if (g == nullptr) {
+      this->packet_buf_.mark_field_unavailable();
+      return;
+    }
+    this->packet_buf_.add_field_bool(key, static_cast<bool>(g->value()));
+  }
+
+  template<typename T>
+  void add_entity_field_bool(const char *key, globals::RestoringGlobalsComponent<T> *g) {
+    if (g == nullptr) {
+      this->packet_buf_.mark_field_unavailable();
+      return;
+    }
+    this->packet_buf_.add_field_bool(key, static_cast<bool>(g->value()));
+  }
+
+  template<typename T>
+  void add_entity_field_bit(const char *key, globals::GlobalsComponent<T> *g, uint8_t bit) {
+    if (g == nullptr) {
+      this->packet_buf_.mark_field_unavailable();
+      return;
+    }
+    this->packet_buf_.add_field_bit(key, static_cast<float>(g->value()), bit);
+  }
+
+  template<typename T>
+  void add_entity_field_bit(const char *key, globals::RestoringGlobalsComponent<T> *g, uint8_t bit) {
+    if (g == nullptr) {
+      this->packet_buf_.mark_field_unavailable();
+      return;
+    }
+    this->packet_buf_.add_field_bit(key, static_cast<float>(g->value()), bit);
+  }
+
+  template<typename T>
+  void add_entity_tag(const char *key, globals::GlobalsComponent<T> *g, int decimals = -1,
+                      std::initializer_list<const char *> ignore_values = {}) {
+    if (g == nullptr) {
+      this->packet_buf_.mark_field_unavailable();
+      return;
+    }
+    this->packet_buf_.add_tag_auto(key, g->value(), decimals, ignore_values);
+  }
+
+  template<typename T>
+  void add_entity_tag(const char *key, globals::RestoringGlobalsComponent<T> *g, int decimals = -1,
+                      std::initializer_list<const char *> ignore_values = {}) {
+    if (g == nullptr) {
+      this->packet_buf_.mark_field_unavailable();
+      return;
+    }
+    this->packet_buf_.add_tag_auto(key, g->value(), decimals, ignore_values);
+  }
+
+  template<typename T, uint8_t SZ>
+  void add_entity_tag(const char *key, globals::RestoringGlobalStringComponent<T, SZ> *g, int decimals = -1,
+                      std::initializer_list<const char *> ignore_values = {}) {
+    (void) decimals;
+    if (g == nullptr) {
+      this->packet_buf_.mark_field_unavailable();
+      return;
+    }
+    this->packet_buf_.add_tag(key, g->value().c_str(), ignore_values);
   }
 #endif
 

@@ -16,6 +16,20 @@ external_components:
       path: ../../components
     components: [influxdb_udp]
 
+globals:
+  - id: p_term
+    type: float
+    initial_value: "1.25"
+    restore_value: false
+  - id: cycle_count
+    type: int
+    initial_value: "42"
+    restore_value: false
+  - id: global_mode
+    type: std::string
+    initial_value: '"Auto"'
+    restore_value: false
+
 sensor:
   - platform: uptime
     id: sys_uptime
@@ -87,6 +101,10 @@ influxdb_udp:
         uptime:
           sensor: sys_uptime
           type: uint
+        p_term: p_term
+        cycle_count:
+          global: cycle_count
+          type: uint
         free_heap:
           type: uint
           lambda: |-
@@ -97,6 +115,8 @@ influxdb_udp:
       skip_if_nan: false
       tags:
         bank: primary
+        ctrl_mode:
+          global: global_mode
         mode:
           text_sensor: charge_mode
           ignore_values: ["Unavailable", "Unknown"]

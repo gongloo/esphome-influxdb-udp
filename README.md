@@ -3,7 +3,7 @@
 [![CI](https://github.com/gongloo/esphome-influxdb-udp/actions/workflows/ci.yml/badge.svg)](https://github.com/gongloo/esphome-influxdb-udp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A high-performance, zero-allocation **ESPHome external component** that serializes and transmits telemetry from ESPHome entities (`sensor`, `binary_sensor`, `switch`, `text_sensor`, `number`, `select`) and C++ lambdas over UDP using the [InfluxDB Line Protocol](https://docs.influxdata.com/influxdb/v2/reference/syntax/line-protocol/).
+A high-performance, zero-allocation **ESPHome external component** that serializes and transmits telemetry from ESPHome entities (`sensor`, `binary_sensor`, `switch`, `text_sensor`, `number`, `select`), ESPHome global variables (`globals`), and C++ lambdas over UDP using the [InfluxDB Line Protocol](https://docs.influxdata.com/influxdb/v2/reference/syntax/line-protocol/).
 
 Designed for resource-constrained ESP32/ESP8266 nodes with dozens or hundreds of sensors (such as multi-pack BMS arrays, solar MPPT controllers, DC-DC converters, HVAC controllers, and relay banks), `influxdb_udp` replaces hundreds of lines of repetitive `interval:` C++ lambdas and `snprintf` boilerplate with a concise, declarative YAML schema that compiles directly into flat C++ statements.
 
@@ -154,17 +154,21 @@ Any field in `fields:` (or inline in `points:`) can reference an ESPHome entity 
 
 ```yaml
 fields:
-  # Bare entity ID shorthand — C++ overload resolution automatically detects whether
-  # the ID is a sensor, binary_sensor, switch, text_sensor, number, or select!
+  # Bare entity / global ID shorthand — C++ overload resolution automatically detects whether
+  # the ID is a sensor, binary_sensor, switch, text_sensor, number, select, or global variable!
   input_voltage: orion_input_voltage
   charging: bms0_charging
   relay_state: galley_fan_switch
   operating_mode: mppt_charge_mode
+  p_term: p_term_global
 
   # Explicit dictionary syntax when specifying formatting or type overrides:
   output_voltage:
     sensor: orion_output_voltage
     decimals: 3
+  d_term:
+    global: d_term_global
+    decimals: 4
 ```
 
 | ESPHome Entity Type | Default Line Protocol Field Type | Default Formatting Behavior | Unavailable / Skip Condition |
@@ -175,6 +179,7 @@ fields:
 | `text_sensor` | String (`"Bulk"`) | Quoted & escaped string (`\"`, `\\`) | `!ts->has_state()`, empty `""`, or in `ignore_values` |
 | `number` | Float (`80.0`) | `%.4g` (or `%.*f` if `decimals:` is set; `123i` if `type: int`) | `!n->has_state()` or `std::isnan(n->state)` |
 | `select` | String (`"Eco"`) | Quoted & escaped `current_option()` | `!sel->has_state()`, empty `""`, or in `ignore_values` |
+| `globals` | Auto-deduced from stored value | `bool` → `T`/`F`; signed int → `%lldi`; unsigned int → `%llui`; `float`/`double` → `%.4g` (or `%.*f` with `decimals:`); `std::string` → `"..."` | `g == nullptr`, `NaN`/`Inf` for floats, or in `ignore_values` |
 | `!lambda` | Auto-deduced from C++ return type | `bool` → `T`/`F`; signed int → `%lldi`; unsigned int → `%llui`; `float`/`double` → `%.4g` (or `%.*f` with `decimals:`); `const char*`/`std::string` → `"..."`; `std::optional<T>` → unwraps or skips if `std::nullopt` | `NaN`/`Inf` for floats, empty/`ignore_values` for strings, `std::nullopt` for `std::optional` |
 
 ### 2. Field Type Overrides (`type:`) and Bitmask Extraction (`bit:`)
@@ -345,7 +350,8 @@ Each entry under `fields:` (or inline field key on a point) can be a **bare enti
 
 | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `entity` | `ID<EntityBase>` | *(One source required)* | Any ESPHome `sensor`, `binary_sensor`, `switch`, `text_sensor`, `number`, or `select` ID. |
+| `entity` | `ID` | *(One source required)* | Any ESPHome entity (`sensor`, `binary_sensor`, `switch`, `text_sensor`, `number`, `select`) or `globals` ID. |
+| `global` | `ID<GlobalsComponent>` | — | Explicit ESPHome `globals` ID (also accepts `globals:`). |
 | `sensor` | `ID<Sensor>` | — | Explicit `sensor` ID. |
 | `binary_sensor` | `ID<BinarySensor>` | — | Explicit `binary_sensor` ID. |
 | `switch` | `ID<Switch>` | — | Explicit `switch` ID. |

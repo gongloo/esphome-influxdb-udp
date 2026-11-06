@@ -185,6 +185,62 @@ class TestInfluxDBUDPSchema(unittest.TestCase):
                 }
             )
 
+    def test_global_fields_and_tags(self):
+        cfg = influxdb_udp.CONFIG_SCHEMA(
+            {
+                "host": "192.168.1.50",
+                "tags": {
+                    "mode": {"global": "global_mode_tag"},
+                    "alt_mode": {"globals": "global_alt_mode_tag"},
+                },
+                "measurements": [
+                    {
+                        "measurement": "pid_stats",
+                        "update_interval": "10s",
+                        "fields": {
+                            "p_term": "p_term_global",
+                            "d_term": {"global": "d_term_global", "decimals": 4},
+                            "ff_term": {"globals": "ff_term_global", "type": "float"},
+                            "counter": {"global": "counter_global", "type": "uint"},
+                            "flag": {"global": "flag_global", "type": "bool"},
+                            "bit_val": {"global": "mask_global", "bit": 2},
+                        },
+                    }
+                ],
+            }
+        )
+        m = cfg["measurements"][0]
+        fields = m["fields"]
+        self.assertEqual(fields["p_term"]["entity"].id, "p_term_global")
+        self.assertEqual(fields["d_term"]["global"].id, "d_term_global")
+        self.assertEqual(fields["d_term"]["decimals"], 4)
+        self.assertEqual(fields["ff_term"]["global"].id, "ff_term_global")
+        self.assertEqual(fields["ff_term"]["type"], "float")
+        self.assertEqual(fields["counter"]["type"], "uint")
+        self.assertEqual(fields["flag"]["type"], "bool")
+        self.assertEqual(fields["bit_val"]["bit"], 2)
+        self.assertEqual(cfg["tags"]["mode"]["global"].id, "global_mode_tag")
+        self.assertEqual(cfg["tags"]["alt_mode"]["global"].id, "global_alt_mode_tag")
+
+    def test_invalid_multiple_sources_with_global(self):
+        with self.assertRaises(cv.Invalid):
+            influxdb_udp.CONFIG_SCHEMA(
+                {
+                    "host": "192.168.1.50",
+                    "measurements": [
+                        {
+                            "measurement": "bad",
+                            "fields": {
+                                "f": {
+                                    "global": "g1",
+                                    "sensor": "s1",
+                                }
+                            },
+                        }
+                    ],
+                }
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
