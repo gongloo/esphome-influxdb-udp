@@ -1,6 +1,9 @@
 #include "influxdb_udp.h"
+#include "esphome/core/application.h"
+#include "esphome/core/entity_base.h"
 #include "esphome/core/log.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 
@@ -78,6 +81,8 @@ void InfluxDBUDP::setup() {
     BatchCallback cb = entry.callback;
     this->set_interval(entry.interval_ms, [this, cb]() { cb(this); });
   }
+
+  this->setup_publish_all_();
 }
 
 void InfluxDBUDP::dump_config() {
@@ -86,6 +91,155 @@ void InfluxDBUDP::dump_config() {
                 this->dest_valid_ ? "valid" : "inactive");
   ESP_LOGCONFIG(TAG, "  Max Packet Size: %u bytes", static_cast<unsigned>(this->max_packet_size_));
   ESP_LOGCONFIG(TAG, "  Periodic Batch Groups: %u", static_cast<unsigned>(this->periodic_batches_.size()));
+  if (this->publish_all_) {
+    ESP_LOGCONFIG(TAG, "  Publish All: enabled (send_timeout: %u ms)", static_cast<unsigned>(this->send_timeout_ms_));
+  }
+}
+
+void InfluxDBUDP::loop() {
+  if (this->has_pending_flush_ && (millis() - this->last_buffered_time_ >= this->send_timeout_ms_)) {
+    this->flush();
+    this->has_pending_flush_ = false;
+  }
+}
+
+bool InfluxDBUDP::is_publish_all_excluded_(EntityBase *obj) const {
+  if (obj == nullptr)
+    return true;
+  if (!this->publish_all_include_internal_ && obj->is_internal())
+    return true;
+  return std::any_of(this->publish_all_excludes_.begin(), this->publish_all_excludes_.end(),
+                     [obj](EntityBase *e) { return e == obj; });
+}
+
+void InfluxDBUDP::schedule_publish_all_flush_() {
+  if (this->send_timeout_ms_ == 0) {
+    this->flush();
+    return;
+  }
+  this->last_buffered_time_ = millis();
+  this->has_pending_flush_ = true;
+}
+
+void InfluxDBUDP::setup_publish_all_() {
+  if (!this->publish_all_)
+    return;
+
+#ifndef OBJECT_ID_MAX_LEN
+  static constexpr size_t OBJECT_ID_MAX_LEN = 128;
+#endif
+
+#ifdef USE_BINARY_SENSOR
+  if (this->publish_all_include_binary_sensors_) {
+    for (auto *obj : App.get_binary_sensors()) {
+      if (this->is_publish_all_excluded_(obj))
+        continue;
+      char buf[OBJECT_ID_MAX_LEN];
+      std::string measurement = obj->get_object_id_to(buf).str();
+      if (measurement.empty())
+        continue;
+      obj->add_on_state_callback([this, measurement](bool state) {
+        this->packet_buf_.build_line(false, [&]() {
+          this->packet_buf_.begin_measurement_escaped(measurement.c_str(),
+                                                      this->publish_all_tags_.empty() ? nullptr : this->publish_all_tags_.c_str());
+          this->packet_buf_.add_field_bool("value", state);
+        });
+        this->schedule_publish_all_flush_();
+      });
+    }
+  }
+#endif
+
+#ifdef USE_SENSOR
+  if (this->publish_all_include_sensors_) {
+    for (auto *obj : App.get_sensors()) {
+      if (this->is_publish_all_excluded_(obj))
+        continue;
+      char buf[OBJECT_ID_MAX_LEN];
+      std::string measurement = obj->get_object_id_to(buf).str();
+      if (measurement.empty())
+        continue;
+      int8_t dec = obj->get_accuracy_decimals();
+      obj->add_on_state_callback([this, measurement, dec](float state) {
+        if (std::isnan(state) || std::isinf(state))
+          return;
+        this->packet_buf_.build_line(false, [&]() {
+          this->packet_buf_.begin_measurement_escaped(measurement.c_str(),
+                                                      this->publish_all_tags_.empty() ? nullptr : this->publish_all_tags_.c_str());
+          this->packet_buf_.add_field_float("value", state, dec);
+        });
+        this->schedule_publish_all_flush_();
+      });
+    }
+  }
+#endif
+
+#ifdef USE_TEXT_SENSOR
+  if (this->publish_all_include_text_sensors_) {
+    for (auto *obj : App.get_text_sensors()) {
+      if (this->is_publish_all_excluded_(obj))
+        continue;
+      char buf[OBJECT_ID_MAX_LEN];
+      std::string measurement = obj->get_object_id_to(buf).str();
+      if (measurement.empty())
+        continue;
+      obj->add_on_state_callback([this, measurement](const std::string &state) {
+        if (state.empty())
+          return;
+        this->packet_buf_.build_line(false, [&]() {
+          this->packet_buf_.begin_measurement_escaped(measurement.c_str(),
+                                                      this->publish_all_tags_.empty() ? nullptr : this->publish_all_tags_.c_str());
+          this->packet_buf_.add_field_str("value", state);
+        });
+        this->schedule_publish_all_flush_();
+      });
+    }
+  }
+#endif
+
+#ifdef USE_SWITCH
+  if (this->publish_all_include_switches_) {
+    for (auto *obj : App.get_switches()) {
+      if (this->is_publish_all_excluded_(obj))
+        continue;
+      char buf[OBJECT_ID_MAX_LEN];
+      std::string measurement = obj->get_object_id_to(buf).str();
+      if (measurement.empty())
+        continue;
+      obj->add_on_state_callback([this, measurement](bool state) {
+        this->packet_buf_.build_line(false, [&]() {
+          this->packet_buf_.begin_measurement_escaped(measurement.c_str(),
+                                                      this->publish_all_tags_.empty() ? nullptr : this->publish_all_tags_.c_str());
+          this->packet_buf_.add_field_bool("value", state);
+        });
+        this->schedule_publish_all_flush_();
+      });
+    }
+  }
+#endif
+
+#ifdef USE_NUMBER
+  if (this->publish_all_include_numbers_) {
+    for (auto *obj : App.get_numbers()) {
+      if (this->is_publish_all_excluded_(obj))
+        continue;
+      char buf[OBJECT_ID_MAX_LEN];
+      std::string measurement = obj->get_object_id_to(buf).str();
+      if (measurement.empty())
+        continue;
+      obj->add_on_state_callback([this, measurement](float state) {
+        if (std::isnan(state) || std::isinf(state))
+          return;
+        this->packet_buf_.build_line(false, [&]() {
+          this->packet_buf_.begin_measurement_escaped(measurement.c_str(),
+                                                      this->publish_all_tags_.empty() ? nullptr : this->publish_all_tags_.c_str());
+          this->packet_buf_.add_field_float("value", state);
+        });
+        this->schedule_publish_all_flush_();
+      });
+    }
+  }
+#endif
 }
 
 void InfluxDBUDP::send_udp_payload(const uint8_t *data, size_t len) {

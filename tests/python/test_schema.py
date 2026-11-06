@@ -241,6 +241,47 @@ class TestInfluxDBUDPSchema(unittest.TestCase):
                 }
             )
 
+    def test_publish_all_boolean(self):
+        cfg = influxdb_udp.CONFIG_SCHEMA(
+            {
+                "host": "192.168.1.50",
+                "publish_all": True,
+            }
+        )
+        self.assertIn("publish_all", cfg)
+        p = cfg["publish_all"]
+        self.assertFalse(p["include_internal"])
+        self.assertTrue(p["include_sensors"])
+        self.assertTrue(p["include_binary_sensors"])
+        self.assertTrue(p["include_text_sensors"])
+        self.assertFalse(p["include_switches"])
+        self.assertEqual(p["send_timeout"].total_milliseconds, 100)
+
+    def test_publish_all_dictionary(self):
+        cfg = influxdb_udp.CONFIG_SCHEMA(
+            {
+                "host": "192.168.1.50",
+                "publish_all": {
+                    "include_internal": True,
+                    "include_switches": True,
+                    "send_timeout": "50ms",
+                },
+            }
+        )
+        p = cfg["publish_all"]
+        self.assertTrue(p["include_internal"])
+        self.assertTrue(p["include_switches"])
+        self.assertEqual(p["send_timeout"].total_milliseconds, 50)
+
+    def test_publish_all_disabled_fails_if_no_measurements(self):
+        with self.assertRaises(cv.Invalid):
+            influxdb_udp.CONFIG_SCHEMA(
+                {
+                    "host": "192.168.1.50",
+                    "publish_all": False,
+                }
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

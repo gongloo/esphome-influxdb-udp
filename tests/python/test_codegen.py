@@ -276,6 +276,19 @@ class TestInfluxDBUDPCodegenAndIntervalInference(unittest.TestCase):
         validated = influxdb_udp.FINAL_VALIDATE_SCHEMA(cfg_explicit)
         self.assertEqual(validated["measurements"][0][CONF_UPDATE_INTERVAL], SCHEDULER_DONT_RUN)
 
+    def test_publish_all_final_validation(self):
+        fv.full_config.set({})
+        cfg = influxdb_udp.CONFIG_SCHEMA(
+            {
+                "host": "192.168.1.50",
+                "publish_all": True,
+            }
+        )
+        validated = influxdb_udp.FINAL_VALIDATE_SCHEMA(cfg)
+        self.assertIn("publish_all", validated)
+        self.assertTrue(validated["publish_all"]["include_sensors"])
+
+
 
 if __name__ == "__main__":
     unittest.main()
