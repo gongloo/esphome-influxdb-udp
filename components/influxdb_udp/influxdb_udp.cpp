@@ -57,7 +57,7 @@ void InfluxDBUDP::register_periodic_batch(uint32_t interval_ms, BatchCallback cb
 
 void InfluxDBUDP::setup() {
 #ifdef USE_NETWORK
-#if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 10, 0)
+#if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0)
   this->socket_ = socket::socket_ip_udp_send(0);
 #else
   this->socket_ = socket::socket_ip(SOCK_DGRAM, 0);

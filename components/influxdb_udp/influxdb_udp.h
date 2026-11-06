@@ -345,7 +345,7 @@ class InfluxDBUDP : public Component {
   std::vector<PeriodicBatchEntry> periodic_batches_{};
 
 #ifdef USE_NETWORK
-#if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 10, 0)
+#if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0)
   std::unique_ptr<socket::UDPSendSocket> socket_{nullptr};
 #else
   std::unique_ptr<socket::Socket> socket_{nullptr};
