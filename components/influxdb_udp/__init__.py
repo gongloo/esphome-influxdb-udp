@@ -2,7 +2,16 @@ from collections import OrderedDict
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome import automation
-from esphome.components import binary_sensor, number, select, sensor, switch, text, text_sensor
+from esphome.components import (
+    binary_sensor,
+    globals as globals_comp,
+    number,
+    select,
+    sensor,
+    switch,
+    text,
+    text_sensor,
+)
 from esphome.const import (
     CONF_ENTITY_CATEGORY,
     CONF_FILTERS,
@@ -67,6 +76,9 @@ CONF_IGNORE_VALUES = "ignore_values"
 CONF_INT_SUFFIX = "int_suffix"
 CONF_STATIC_VALUE = "static_value"
 
+CONF_GLOBAL = "global"
+CONF_GLOBALS = "globals"
+
 ENTITY_SOURCE_KEYS = (
     CONF_ENTITY,
     CONF_SENSOR,
@@ -75,6 +87,7 @@ ENTITY_SOURCE_KEYS = (
     CONF_TEXT_SENSOR,
     CONF_NUMBER,
     CONF_SELECT,
+    CONF_GLOBAL,
 )
 ALL_SOURCE_KEYS = ENTITY_SOURCE_KEYS + (CONF_LAMBDA,)
 
@@ -124,6 +137,9 @@ def _normalize_field_spec(value):
     if isinstance(value, cv.Lambda):
         return {CONF_LAMBDA: value}
     if isinstance(value, dict):
+        if CONF_GLOBALS in value and CONF_GLOBAL not in value:
+            value = dict(value)
+            value[CONF_GLOBAL] = value.pop(CONF_GLOBALS)
         return value
     return {CONF_ENTITY: value}
 
@@ -147,7 +163,8 @@ FIELD_SPEC_SCHEMA = cv.All(
     _normalize_field_spec,
     cv.Schema(
         {
-            cv.Optional(CONF_ENTITY): cv.use_id(cg.EntityBase),
+            cv.Optional(CONF_ENTITY): cv.use_id(None),
+            cv.Optional(CONF_GLOBAL): cv.use_id(globals_comp.GlobalsComponent),
             cv.Optional(CONF_SENSOR): cv.use_id(sensor.Sensor),
             cv.Optional(CONF_BINARY_SENSOR): cv.use_id(binary_sensor.BinarySensor),
             cv.Optional(CONF_SWITCH): cv.use_id(switch.Switch),
@@ -171,6 +188,9 @@ def _normalize_tag_spec(value):
     if isinstance(value, cv.Lambda):
         return {CONF_LAMBDA: value}
     if isinstance(value, dict):
+        if CONF_GLOBALS in value and CONF_GLOBAL not in value:
+            value = dict(value)
+            value[CONF_GLOBAL] = value.pop(CONF_GLOBALS)
         return value
     if isinstance(value, bool):
         return {CONF_STATIC_VALUE: "true" if value else "false"}
@@ -195,7 +215,8 @@ TAG_SPEC_SCHEMA = cv.All(
     cv.Schema(
         {
             cv.Optional(CONF_STATIC_VALUE): cv.string_strict,
-            cv.Optional(CONF_ENTITY): cv.use_id(cg.EntityBase),
+            cv.Optional(CONF_ENTITY): cv.use_id(None),
+            cv.Optional(CONF_GLOBAL): cv.use_id(globals_comp.GlobalsComponent),
             cv.Optional(CONF_SENSOR): cv.use_id(sensor.Sensor),
             cv.Optional(CONF_BINARY_SENSOR): cv.use_id(binary_sensor.BinarySensor),
             cv.Optional(CONF_SWITCH): cv.use_id(switch.Switch),
@@ -448,6 +469,11 @@ def _resolve_entity_interval_ms(fconf, entity_id, _depth=0):
     entity_conf, ancestors = found
     if not isinstance(entity_conf, dict):
         return None
+
+    # Ignore ESPHome globals; they do not poll telemetry data
+    for d in [entity_conf] + ancestors:
+        if d in fconf.get("globals", []):
+            return None
 
     # 1. Check sensor/binary_sensor/text_sensor filters for `throttle` / `throttle_average` first
     throttle_ms = _extract_throttle_filter_ms(entity_conf)

@@ -231,6 +231,51 @@ class TestInfluxDBUDPCodegenAndIntervalInference(unittest.TestCase):
         validated = influxdb_udp.FINAL_VALIDATE_SCHEMA(cfg)
         self.assertEqual(validated["measurements"][0][CONF_UPDATE_INTERVAL], SCHEDULER_DONT_RUN)
 
+    def test_auto_infer_ignores_globals_and_requires_explicit_interval(self):
+        g_id = ID("p_term")
+        fconf = {
+            "globals": [
+                {
+                    CONF_ID: g_id,
+                    "type": "float",
+                    "restore_value": True,
+                    CONF_UPDATE_INTERVAL: TimePeriodMilliseconds(milliseconds=1000),
+                }
+            ]
+        }
+        fv.full_config.set(fconf)
+
+        cfg = influxdb_udp.CONFIG_SCHEMA(
+            {
+                "host": "192.168.1.50",
+                "measurements": [
+                    {
+                        "measurement": "global_only",
+                        "fields": {"p": "p_term"},
+                    }
+                ],
+            }
+        )
+        # Should raise cv.Invalid because global RTC interval is ignored and no telemetry interval is set
+        with self.assertRaises(cv.Invalid):
+            influxdb_udp.FINAL_VALIDATE_SCHEMA(cfg)
+
+        # With explicit update_interval: never (or e.g. 5s), it succeeds
+        cfg_explicit = influxdb_udp.CONFIG_SCHEMA(
+            {
+                "host": "192.168.1.50",
+                "measurements": [
+                    {
+                        "measurement": "global_only",
+                        "update_interval": "never",
+                        "fields": {"p": "p_term"},
+                    }
+                ],
+            }
+        )
+        validated = influxdb_udp.FINAL_VALIDATE_SCHEMA(cfg_explicit)
+        self.assertEqual(validated["measurements"][0][CONF_UPDATE_INTERVAL], SCHEDULER_DONT_RUN)
+
 
 if __name__ == "__main__":
     unittest.main()
